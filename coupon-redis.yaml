@@ -1,0 +1,79 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: redis-pv
+spec:
+  capacity:
+    storage: 1Gi
+  volumeMode: Filesystem
+  accessModes:
+    - ReadWriteMany
+  storageClassName: efs-sc
+  csi:
+    driver: efs.csi.aws.com
+    volumeHandle: fs-07902a8fefe0e088f  # 실제 EFS 파일 시스템 ID로 변경
+    volumeAttributes:
+      path: /redis-data
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: redis-data
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: efs-sc
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: coupon-redis
+  labels:
+    io.kompose.service: coupon-redis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      io.kompose.service: coupon-redis
+  strategy:
+    type: Recreate  # 기본값은 RollingUpdate이지만 Recreate로 명시했습니다.
+  template:
+    metadata:
+      labels:
+        io.kompose.service: coupon-redis
+    spec:
+      containers:
+        - name: coupon-redis
+          image: redis:7.2-alpine
+          args:
+            - redis-server
+            - --port
+            - "6379"
+          ports:
+            - containerPort: 6379
+              protocol: TCP
+          volumeMounts:
+            - mountPath: /var/lib/redis
+              name: redis-data
+      restartPolicy: Always
+      volumes:
+        - name: redis-data
+          persistentVolumeClaim:
+            claimName: redis-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: coupon-redis
+  labels:
+    io.kompose.service: coupon-redis
+spec:
+  ports:
+    - name: "6379"
+      port: 6379
+      targetPort: 6379
+  selector:
+    io.kompose.service: coupon-redis
